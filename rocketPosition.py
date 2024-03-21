@@ -65,6 +65,21 @@ def calculate_tvc_angle(force):
 def calculate_tvc_force(angle):
     return angle * 3.8
 
+def limit_tvc_angle(newAngle, oldAngle, maxAngle, dt):
+    tvc_angle_sign = math.copysign(1, newAngle - oldAngle)
+    angleDelta = abs(newAngle - oldAngle)
+
+    if angleDelta > TVC_DEG_PER_SECOND_MAX * dt:
+        angleDelta = TVC_DEG_PER_SECOND_MAX * dt
+
+    calculatedAngle = oldAngle + angleDelta * tvc_angle_sign
+    calculatedAngleSign = math.copysign(1, calculatedAngle)
+
+    if abs(calculatedAngle) > maxAngle:
+        calculatedAngle = maxAngle * calculatedAngleSign
+    
+    return calculatedAngle
+
 def tvc(x, y, z, vx, vy, vz, thrust, thrust_direction, dt,vanePitch, vaneYaw):
     acceleration = thrust * thrust_direction / rocket_mass 
     acceleration[2] -= gravity 
@@ -86,28 +101,26 @@ def tvc(x, y, z, vx, vy, vz, thrust, thrust_direction, dt,vanePitch, vaneYaw):
     z += vz * dt
 
     if abs(vx) > TVC_THRESHOLD:
-        pitchForceCorrection = rocket_mass * abs(vx) / dt
-        maxPitch = vanePitch + TVC_DEG_PER_SECOND_MAX * dt
-        maxPitchForce = calculate_tvc_force(maxPitch)
-        if pitchForceCorrection > maxPitchForce:
-            pitchForceCorrection = maxPitchForce
-
-        vanePitch = calculate_tvc_angle(pitchForceCorrection)
+        pitchForceCorrection = - (rocket_mass * vx / dt)
+        pitchNeeded = calculate_tvc_angle(pitchForceCorrection)
+        vanePitch = limit_tvc_angle(pitchNeeded, vanePitch, ROCKET_PITCH_RANGE, dt)
+        pitchForceCorrection = calculate_tvc_force(vanePitch)
         pitchAcc = pitchForceCorrection / rocket_mass
-        vx += pitchAcc * dt * -vxSign
-        x += vx * dt * -vxSign
+        vx += pitchAcc * dt
+        x -= vx * dt
+    else:
+        vanePitch = limit_tvc_angle(0, vanePitch, ROCKET_PITCH_RANGE, dt)
 
     if abs(vy) > TVC_THRESHOLD:
-        yawForceCorrection = rocket_mass * abs(vy) / dt
-        maxYaw = vaneYaw + TVC_DEG_PER_SECOND_MAX * dt
-        maxYawForce = calculate_tvc_force(maxYaw)
-        if yawForceCorrection > maxYawForce:
-            yawForceCorrection = maxYawForce
-
-        vaneYaw = calculate_tvc_angle(yawForceCorrection)
+        yawForceCorrection = - (rocket_mass * vy / dt)
+        yawNeeded = calculate_tvc_angle(yawForceCorrection)
+        vaneYaw = limit_tvc_angle(yawNeeded, vaneYaw, ROCKET_YAW_RANGE, dt)
+        yawForceCorrection = calculate_tvc_force(vaneYaw)
         yawAcc = yawForceCorrection / rocket_mass
-        vy += yawAcc * dt * -vySign
-        y += vy * dt * -vySign
+        vy += yawAcc * dt
+        y -= vy * dt
+    else:
+        vaneYaw = limit_tvc_angle(0, vaneYaw, ROCKET_YAW_RANGE, dt)
         
     return x, y, z, vx, vy, vz, vanePitch, vaneYaw
 
@@ -130,10 +143,11 @@ for time_step in range(1000):
     x, y, z, vx, vy, vz = update_state(x, y, z, vx, vy, vz, thrust, thrust_direction, dt)
     positions.append([x,y,z])
 
+    print("TVC vx: ", vxTVC, "vy: ", vyTVC, "vz: ", vzTVC)
     xTVC, yTVC, zTVC, vxTVC, vyTVC, vzTVC, vanePitch, vaneYaw = tvc(xTVC, yTVC, zTVC, vxTVC, vyTVC, vzTVC, thrust, thrust_direction, dt, vanePitch, vaneYaw)
     positionsTVC.append([xTVC,yTVC,zTVC])
-
-    print("Time: {:.2f} s, Position: ({:.2f}, {:.2f}, {:.2f}) m, Velocity: ({:.2f}, {:.2f}, {:.2f}) m/s, Thrust: {:.2f} N".format(time_step * dt, x, y, z, vx, vy, vz, thrust))
+    
+    print("TVCPitch: {:.2f} deg, TVCYaw: {:.2f} deg".format(vanePitch, vaneYaw))
     
     
 
